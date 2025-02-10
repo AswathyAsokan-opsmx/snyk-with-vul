@@ -44,10 +44,12 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-      - name: Build Docker Image
+      - name: Build Docker Image with Unique Tag
         run: |
-          docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:latest .
+          IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+          echo "Generated Image Tag: $IMAGE_TAG"
+          docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:$IMAGE_TAG .
 
       - name: Push Docker Image to Docker Hub
         run: |
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:latest
+          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:$IMAGE_TAG
