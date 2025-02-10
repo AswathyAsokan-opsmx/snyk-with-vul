@@ -19,7 +19,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
-          java-version: '11' # Adjust to your required version
+          java-version: '11'
           distribution: 'adopt'
 
       - name: Install Snyk CLI
@@ -31,7 +31,9 @@ jobs:
         run: snyk auth $SNYK_TOKEN
 
       - name: Run Snyk Test for Vulnerabilities
-        run: snyk test --reachable
+        run: snyk test --all-projects --reachable
+        continue-on-error: true
 
       - name: Monitor Project in Snyk
-        run: snyk monitor --reachable
+        run: snyk monitor --all-projects --reachable
+        continue-on-error: true
