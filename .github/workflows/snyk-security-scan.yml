@@ -63,7 +63,7 @@ jobs:
         run: |
           docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}
 
-      - name: Monitor Docker Image in Snyk with Metadata
+      - name: Monitor Docker Image in Snyk
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
@@ -71,5 +71,4 @@ jobs:
           GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           echo "Monitoring Docker Image in Snyk with commit: $COMMIT_SHA and branch: $GIT_BRANCH"
           snyk monitor --docker ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }} \
-            --project-name=my-app-$COMMIT_SHA \
-            --project-tags="repo=https://github.com/${{ github.repository }},branch=$GIT_BRANCH,commit=$COMMIT_SHA"
+            --project-name=my-app-${{ github.repository }}-$GIT_BRANCH-$COMMIT_SHA
