@@ -30,49 +30,48 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: snyk auth $SNYK_TOKEN
 
-      - name: Echo Environment Variables
-        run: |
-          echo "GITHUB_JOB=$GITHUB_JOB"
-          echo "GITHUB_REF=$GITHUB_REF"
-          echo "GITHUB_SHA=$GITHUB_SHA"
-          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
-          echo "GITHUB_WORKFLOW=$GITHUB_WORKFLOW"
-          echo "GITHUB_ACTOR=$GITHUB_ACTOR"
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-      - name: Run Snyk as a Docker Container
+      - name: Build Docker Image with Unique Tag
+        id: build_docker
+        run: |
+          IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+          echo "Generated Image Tag: $IMAGE_TAG"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:$IMAGE_TAG .
+
+      - name: Push Docker Image to Docker Hub
+        run: |
+          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}
+          echo "Docker image pushed: ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}"
+
+      - name: Debug Image Tag
+        run: |
+          echo "Image tag used: ${{ steps.build_docker.outputs.IMAGE_TAG }}"
+
+      - name: Monitor Docker Image in Snyk
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-          GITHUB_JOB: ${{ github.job }}
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
-          GITHUB_WORKFLOW: ${{ github.workflow }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          RUNNER_OS: ${{ runner.os }}
-          RUNNER_TEMP: ${{ runner.temp }}
-          RUNNER_WORKSPACE: ${{ runner.workspace }}
         run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          IMAGE="${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}"
+          echo "Monitoring Docker Image in Snyk with commit: $COMMIT_SHA and image: $IMAGE"
+          
+          # Run Snyk as a Docker container
           docker run --rm \
-            --name snyksnykdocker_be2cdb \
-            --workdir /github/workspace \
-            -e SNYK_TOKEN \
-            -e GITHUB_JOB \
-            -e GITHUB_REF \
-            -e GITHUB_SHA \
-            -e GITHUB_REPOSITORY \
-            -e GITHUB_REPOSITORY_OWNER \
-            -e GITHUB_WORKFLOW \
-            -e GITHUB_ACTOR \
-            -e RUNNER_OS \
-            -e RUNNER_TEMP \
-            -e RUNNER_WORKSPACE \
-            -e GITHUB_ACTIONS=true \
-            -e CI=true \
+            -e SNYK_TOKEN="${{ secrets.SNYK_TOKEN }}" \
+            -e GITHUB_JOB="${{ github.job }}" \
+            -e GITHUB_REF="${{ github.ref }}" \
+            -e GITHUB_SHA="${{ github.sha }}" \
+            -e GITHUB_REPOSITORY="${{ github.repository }}" \
+            -e GITHUB_REPOSITORY_OWNER="${{ github.repository_owner }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -e GITHUB_RUN_NUMBER="${{ github.run_number }}" \
+            -e GITHUB_WORKFLOW="${{ github.workflow }}" \
+            -e RUNNER_OS="${{ runner.os }}" \
             -v "/var/run/docker.sock:/var/run/docker.sock" \
-            -v "/home/runner/work/_temp/_github_home:/github/home" \
-            -v "/home/runner/work/_temp/_github_workflow:/github/workflow" \
-            -v "/home/runner/work/_temp/_runner_file_commands:/github/file_commands" \
-            -v "/home/runner/work/p2p-fe-webview/p2p-fe-webview:/github/workspace" \
-            snyk/snyk:docker snyk monitor --severity-threshold=critical --docker "${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}" --project-name=my-app-$GITHUB_SHA
+            snyk/snyk:docker snyk monitor --docker "$IMAGE" --project-name=my-app-$COMMIT_SHA
