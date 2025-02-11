@@ -16,6 +16,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Enable Debug Logs
+        run: echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
+
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
@@ -30,11 +33,14 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: snyk auth $SNYK_TOKEN
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+      - name: Log Environment Variables
+        run: |
+          echo "GITHUB_JOB=${GITHUB_JOB}"
+          echo "GITHUB_REF=${GITHUB_REF}"
+          echo "GITHUB_SHA=${GITHUB_SHA}"
+          echo "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}"
+          echo "GITHUB_RUN_NUMBER=${GITHUB_RUN_NUMBER}"
+          echo "RUNNER_OS=${RUNNER_OS}"
 
       - name: Build Docker Image with Unique Tag
         id: build_docker
@@ -44,34 +50,33 @@ jobs:
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
           docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:$IMAGE_TAG .
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
       - name: Push Docker Image to Docker Hub
         run: |
           docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}
-          echo "Docker image pushed: ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}"
 
-      - name: Debug Image Tag
-        run: |
-          echo "Image tag used: ${{ steps.build_docker.outputs.IMAGE_TAG }}"
-
-      - name: Monitor Docker Image in Snyk
+      - name: Monitor Docker Image in Snyk with Metadata
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          GITHUB_JOB: ${{ env.GITHUB_JOB }}
+          GITHUB_REF: ${{ env.GITHUB_REF }}
+          GITHUB_SHA: ${{ env.GITHUB_SHA }}
+          GITHUB_REPOSITORY: ${{ env.GITHUB_REPOSITORY }}
+          GITHUB_RUN_NUMBER: ${{ env.GITHUB_RUN_NUMBER }}
+          RUNNER_OS: ${{ env.RUNNER_OS }}
         run: |
-          COMMIT_SHA=$(git rev-parse --short HEAD)
-          IMAGE="${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}"
-          echo "Monitoring Docker Image in Snyk with commit: $COMMIT_SHA and image: $IMAGE"
-          
-          # Run Snyk as a Docker container
-          docker run --rm \
-            -e SNYK_TOKEN="${{ secrets.SNYK_TOKEN }}" \
-            -e GITHUB_JOB="${{ github.job }}" \
-            -e GITHUB_REF="${{ github.ref }}" \
-            -e GITHUB_SHA="${{ github.sha }}" \
-            -e GITHUB_REPOSITORY="${{ github.repository }}" \
-            -e GITHUB_REPOSITORY_OWNER="${{ github.repository_owner }}" \
-            -e GITHUB_RUN_ID="${{ github.run_id }}" \
-            -e GITHUB_RUN_NUMBER="${{ github.run_number }}" \
-            -e GITHUB_WORKFLOW="${{ github.workflow }}" \
-            -e RUNNER_OS="${{ runner.os }}" \
-            -v "/var/run/docker.sock:/var/run/docker.sock" \
-            snyk/snyk:docker snyk monitor --docker "$IMAGE" --project-name=my-app-$COMMIT_SHA
+          echo "Monitoring Docker Image in Snyk with tag: ${{ steps.build_docker.outputs.IMAGE_TAG }}"
+          docker run --rm -e "SNYK_TOKEN=${{ secrets.SNYK_TOKEN }}" \
+          -e "GITHUB_JOB=${{ env.GITHUB_JOB }}" \
+          -e "GITHUB_REF=${{ env.GITHUB_REF }}" \
+          -e "GITHUB_SHA=${{ env.GITHUB_SHA }}" \
+          -e "GITHUB_REPOSITORY=${{ env.GITHUB_REPOSITORY }}" \
+          -e "GITHUB_RUN_NUMBER=${{ env.GITHUB_RUN_NUMBER }}" \
+          -e "RUNNER_OS=${{ env.RUNNER_OS }}" \
+          -v "/var/run/docker.sock:/var/run/docker.sock" \
+          snyk/snyk:docker snyk monitor --docker ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }} --severity-threshold=critical --target-reference="main"
