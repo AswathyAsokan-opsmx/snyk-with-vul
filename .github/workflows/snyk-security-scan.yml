@@ -30,46 +30,49 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: snyk auth $SNYK_TOKEN
 
-      - name: Run Snyk Test for Vulnerabilities
-        run: snyk test --all-projects --reachable
-        continue-on-error: true
-
-      - name: Monitor Project in Snyk
-        run: snyk monitor --all-projects --reachable
-        continue-on-error: true
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-
-      - name: Build Docker Image with Labels
-        id: build_docker
+      - name: Echo Environment Variables
         run: |
-          IMAGE_TAG=$(date +%Y%m%d%H%M%S)
-          COMMIT_SHA=$(git rev-parse --short HEAD)
-          GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          echo "Generated Image Tag: $IMAGE_TAG"
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          docker build \
-            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.revision=$COMMIT_SHA" \
-            --label "org.opencontainers.image.version=$IMAGE_TAG" \
-            --label "org.opencontainers.image.branch=$GIT_BRANCH" \
-            -t ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:$IMAGE_TAG .
+          echo "GITHUB_JOB=$GITHUB_JOB"
+          echo "GITHUB_REF=$GITHUB_REF"
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+          echo "GITHUB_WORKFLOW=$GITHUB_WORKFLOW"
+          echo "GITHUB_ACTOR=$GITHUB_ACTOR"
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
 
-      - name: Push Docker Image to Docker Hub
-        run: |
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}
-
-      - name: Monitor Docker Image in Snyk with Metadata
+      - name: Run Snyk as a Docker Container
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          GITHUB_JOB: ${{ github.job }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          RUNNER_OS: ${{ runner.os }}
+          RUNNER_TEMP: ${{ runner.temp }}
+          RUNNER_WORKSPACE: ${{ runner.workspace }}
         run: |
-          COMMIT_SHA=$(git rev-parse --short HEAD)
-          GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          echo "Monitoring Docker Image in Snyk with commit: $COMMIT_SHA and branch: $GIT_BRANCH"
-          snyk monitor --docker ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }} \
-            --project-name=my-app-${{ github.repository }}-$GIT_BRANCH-$COMMIT_SHA \
-            --project-tags="branch=main,environment=production"
+          docker run --rm \
+            --name snyksnykdocker_be2cdb \
+            --workdir /github/workspace \
+            -e SNYK_TOKEN \
+            -e GITHUB_JOB \
+            -e GITHUB_REF \
+            -e GITHUB_SHA \
+            -e GITHUB_REPOSITORY \
+            -e GITHUB_REPOSITORY_OWNER \
+            -e GITHUB_WORKFLOW \
+            -e GITHUB_ACTOR \
+            -e RUNNER_OS \
+            -e RUNNER_TEMP \
+            -e RUNNER_WORKSPACE \
+            -e GITHUB_ACTIONS=true \
+            -e CI=true \
+            -v "/var/run/docker.sock:/var/run/docker.sock" \
+            -v "/home/runner/work/_temp/_github_home:/github/home" \
+            -v "/home/runner/work/_temp/_github_workflow:/github/workflow" \
+            -v "/home/runner/work/_temp/_runner_file_commands:/github/file_commands" \
+            -v "/home/runner/work/p2p-fe-webview/p2p-fe-webview:/github/workspace" \
+            snyk/snyk:docker snyk monitor --severity-threshold=critical --docker "${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}" --project-name=my-app-$GITHUB_SHA
