@@ -63,6 +63,9 @@ jobs:
         run: |
           docker push ${{ secrets.DOCKER_HUB_USERNAME }}/my-app:${{ steps.build_docker.outputs.IMAGE_TAG }}
 
+      - name: Ensure Git Configuration Directory
+        run: mkdir -p /home/runner && touch /home/runner/.gitconfig
+
       - name: Monitor Docker Image in Snyk
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
